@@ -1,0 +1,45 @@
+{
+  "name": "signalk-ac42-autopilot",
+  "description": "Control a Simrad AC42 autopilot over NMEA 2000 from SignalK, with a clean mobile web app (heading & wind steering, live compass, rudder and wind data).",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/frames.test.js"
+  },
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-webapp",
+    "signalk-category-hardware",
+    "autopilot","pilot",
+    "simrad",
+    "ac42","nac-3",
+    "nmea2000"
+  ],
+  "signalk": {
+    "displayName": "AC42 Pilot",
+    "appIcon": "./icon.svg"
+  },
+  "signalk-plugin-enabled-by-default": false,
+  "author": "Olivier Brial",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=16"
+  },
+  
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/captnoliv/signalk-ac42-autopilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/captnoliv/signalk-ac42-autopilot/issues"
+  },
+  "homepage": "https://github.com/captnoliv/signalk-ac42-autopilot#readme",
+  "files": [
+    "index.js",
+    "lib",
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
+  "version": "1.0.0"
+
+}

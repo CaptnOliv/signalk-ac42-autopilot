@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#05070a">
+<meta name="apple-mobile-web-app-title" content="AC42 Pilot">
+<title>AC42 Pilot</title>
+<style>
+  :root{
+    --bg:#05070a;--tile:#0e1218;--tile-2:#141a22;--line:#1e2731;
+    --txt:#f4f7fa;--muted:#69727e;--muted-2:#8b95a1;
+    --cyan:#39cfe6;--amber:#ffb03a;--yellow:#ffd23d;--purple:#b57bff;--steel:#7aa5d8;
+    --green:#25d366;--green-dim:#0e3a22;--red:#ff4d57;--red-dim:#3a1013;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;}
+  html{touch-action:manipulation;}
+  html,body{height:103%;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,"SF Pro Display",BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;overscroll-behavior:none;
+    user-select:none;-webkit-user-select:none;}
+  body{background:radial-gradient(120% 80% at 50% 12%,#0b1017 0%,#05070a 62%);
+    display:flex;flex-direction:column;}
+  /* height via la chaîne 100% (html→body→#app) : plus fiable qu'un 100dvh en standalone iOS,
+     qui laissait un vide en bas sur certains modèles. #app remplit donc toujours l'écran,
+     et la rose (flex:1) récupère l'espace disponible. */
+  #app{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;position:relative;
+    padding:calc(env(safe-area-inset-top) + 8px) 11px calc(env(safe-area-inset-bottom) + 10px);padding-bottom:0px;}
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;}
+
+  .toprow{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+  .pill{border:1px solid var(--line);border-radius:16px;background:var(--tile);min-height:64px;
+    color:var(--txt);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;
+    font-weight:600;letter-spacing:.2px;}
+  .pill .k{color:var(--muted-2);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;}
+  .pill .v{font-size:20px;font-weight:700;}
+  .pill:active{background:var(--tile-2);}
+  .pill.off{color:var(--red);border-color:#3a1a1d;}
+  .pill.off.eng{color:var(--green);border-color:#123a26;}
+
+  .rudder{position:relative;height:30px;border-radius:11px;background:var(--tile);
+    border:1px solid var(--line);overflow:hidden;}
+  .rudder .fill{position:absolute;top:3px;bottom:3px;border-radius:6px;transition:all .2s ease;}
+  .rudder .center{position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--muted);transform:translateX(-1px);opacity:.7;}
+  .rudder .lab{position:absolute;top:50%;transform:translateY(-50%);font-size:11px;color:var(--muted);letter-spacing:1px;font-weight:700;}
+  .rudder .rval{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;font-weight:800;color:var(--txt);z-index:2;letter-spacing:.3px;}
+
+  .gaugewrap{flex:1;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
+  svg#gauge{width:100%;height:100%;display:block;}
+  #gauge text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;}
+  .corner{position:absolute;top:2px;display:flex;flex-direction:column;line-height:1;}
+  .corner.l{left:2px;align-items:flex-start;}
+  .corner.r{right:2px;align-items:flex-end;}
+  .corner .k{font-size:12px;letter-spacing:1.5px;color:var(--muted);font-weight:700;text-transform:uppercase;}
+  .corner .v{font-size:34px;font-weight:700;margin-top:3px;}
+
+  .strip{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;}
+  .cell{background:var(--tile);border:1px solid var(--line);border-radius:13px;padding:9px 6px 8px;text-align:center;}
+  .cell .k{font-size:11px;letter-spacing:1.2px;color:var(--muted);font-weight:700;text-transform:uppercase;}
+  .cell .v{font-size:23px;font-weight:700;margin-top:2px;line-height:1;}
+  /* TWD : mini-graphe historique 1 h (au-dessus de la rangée d'instruments) */
+  .twdstrip{background:var(--tile);border:1px solid var(--line);border-radius:13px;padding:5px 7px;height:98px;}
+  .twdspark{width:100%;height:100%;display:block;}
+
+  .cmds{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .cmd{position:relative;border-radius:18px;border:1.5px solid transparent;min-height:62px;overflow:hidden;
+    display:flex;flex-direction:row;align-items:center;justify-content:center;gap:11px;color:var(--txt);font-weight:800;}
+  .cmd:active{transform:scale(.97);}
+  .cmd .n{font-size:35px;font-weight:800;letter-spacing:.5px;line-height:1;z-index:1;}
+  .cmd svg{flex:none;stroke:currentColor;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;z-index:1;}
+  .cmd .chev{width:26px;height:26px;}
+  .port-1{background:var(--red-dim);border-color:#5a1a1f;color:#ff8f96;}
+  .port-10{background:var(--red);border-color:var(--red);color:#2a0507;}
+  .stbd-1{background:var(--green-dim);border-color:#155f34;color:#7ff0a8;}
+  .stbd-10{background:var(--green);border-color:var(--green);color:#04240f;}
+  .tack{background:var(--tile);border-color:var(--line);color:var(--muted-2);min-height:62px;gap:11px;}
+  .tack .n{font-size:23px;font-weight:800;letter-spacing:1px;}
+  .tack svg{width:26px;height:26px;}
+  .tack.on-port{color:#ff8f96;}
+  .tack.on-stbd{color:#7ff0a8;}
+  .hold-fill{position:absolute;left:0;top:0;bottom:0;width:0;z-index:0;opacity:.85;}
+  .tack.on-port .hold-fill{background:var(--red-dim);}
+  .tack.on-stbd .hold-fill{background:var(--green-dim);}
+  /* mode NFU (standby) : ±10 deviennent barre bâbord/tribord, ±1 grisés */
+  .lbl-rudder{display:none;}
+  .cmds.nfu .lbl-course{display:none;}
+  .cmds.nfu .lbl-rudder{display:inline;}
+  .cmds.nfu .port-1,.cmds.nfu .stbd-1{opacity:.25;pointer-events:none;}
+  .cmd.nfu-active{filter:brightness(1.35);}
+
+  #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 14px);transform:translateX(-50%);
+    background:#0b0f14;border:1px solid var(--line);border-radius:12px;padding:9px 16px;
+    font-size:13px;font-weight:600;color:var(--txt);opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;white-space:nowrap;}
+  #toast.show{opacity:1;}
+  #toast.err{color:var(--amber);border-color:#4a3a12;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="toprow">
+    <button class="pill" id="modeBtn"><span class="k">Mode</span><span class="v" id="modeName">Wind</span></button>
+    <button class="pill off" id="offBtn"><span class="k">Pilot</span><span class="v" id="offLabel">Standby</span></button>
+  </div>
+
+  <div class="rudder" id="rudder">
+    <div class="fill" id="rudFill"></div>
+    <div class="center"></div>
+    <div class="lab" style="left:9px">P</div>
+    <div class="lab" style="right:9px">S</div>
+    <div class="rval num" id="rudVal">0&deg;</div>
+  </div>
+
+  <div class="gaugewrap">
+    <div class="corner l"><span class="k">HDG</span><span class="v num" style="color:var(--cyan)"><span id="hdg">319</span>&deg;</span></div>
+    <div class="corner r"><span class="k">AWA</span><span class="v num" style="color:var(--amber)"><span id="awa">32</span>&deg;</span></div>
+    <svg id="gauge" viewBox="0 0 400 400" aria-hidden="true"></svg>
+  </div>
+
+  <div class="twdstrip">
+    <svg class="twdspark" id="twdSpark" aria-hidden="true"></svg>
+  </div>
+
+  <div class="strip">
+    <div class="cell"><div class="k">SOG</div><div class="v num" style="color:var(--purple)" id="sog">6.4</div><div class="k" style="letter-spacing:.5px">kn</div></div>
+    <div class="cell"><div class="k">COG</div><div class="v num" style="color:var(--cyan)" id="cog">322</div><div class="k" style="letter-spacing:.5px">&deg;</div></div>
+    <div class="cell"><div class="k">TWS</div><div class="v num" style="color:var(--yellow)" id="tws">12</div><div class="k" style="letter-spacing:.5px">kn</div></div>
+    <div class="cell"><div class="k">AWS</div><div class="v num" style="color:var(--amber)" id="aws">16</div><div class="k" style="letter-spacing:.5px">kn</div></div>
+    <div class="cell"><div class="k">TWA</div><div class="v num" style="color:var(--green)" id="twa">41</div><div class="k" style="letter-spacing:.5px">&deg;</div></div>
+  </div>
+
+  <div class="cmds">
+    <button class="cmd port-1"  data-dir="luff" data-deg="1"><svg class="chev" viewBox="0 0 24 24"><path d="M15 5 L8 12 L15 19"/></svg><span class="n">&minus;1&deg;</span></button>
+    <button class="cmd stbd-1"  data-dir="bear" data-deg="1"><span class="n">+1&deg;</span><svg class="chev" viewBox="0 0 24 24"><path d="M9 5 L16 12 L9 19"/></svg></button>
+    <button class="cmd port-10" data-dir="luff" data-deg="10" data-rudder="port"><svg class="chev" viewBox="0 0 24 24"><path d="M13 5 L6 12 L13 19 M19 5 L12 12 L19 19"/></svg><span class="n lbl-course">&minus;10&deg;</span><span class="n lbl-rudder">HELM</span></button>
+    <button class="cmd stbd-10" data-dir="bear" data-deg="10" data-rudder="stbd"><span class="n lbl-course">+10&deg;</span><span class="n lbl-rudder">HELM</span><svg class="chev" viewBox="0 0 24 24"><path d="M11 5 L18 12 L11 19 M5 5 L12 12 L5 19"/></svg></button>
+    <button class="cmd tack on-port" data-tack="port"><span class="hold-fill"></span><svg viewBox="0 0 24 24"><path d="M20 15 a8 8 0 0 0 -8 -8 h-6 M9 4 L5 7 L9 10"/></svg><span class="n">TACK</span></button>
+    <button class="cmd tack on-stbd" data-tack="stbd"><span class="hold-fill"></span><span class="n">TACK</span><svg viewBox="0 0 24 24"><path d="M4 15 a8 8 0 0 1 8 -8 h6 M15 4 L19 7 L15 10"/></svg></button>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+'use strict'
+const API='/plugins/signalk-ac42-autopilot';
+const S={hdg:319,awa:-32,target:null,windTargetRad:-0.56,mode:'Wind',engaged:true,rudder:0,
+        sog:6.4,cog:322,cogTrue:322,varDeg:0,tws:12,aws:16,twa:-41,live:false,
+        twd:333,twdHist:[],_twdReal:false,twdPref:null,_twdPrefSeen:0};
+
+const NS='http://www.w3.org/2000/svg';
+const gauge=document.getElementById('gauge');
+const CX=200,CY=200,R=182;
+const pol=(r,deg)=>{const a=(deg-90)*Math.PI/180;return[CX+r*Math.cos(a),CY+r*Math.sin(a)];};
+const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+function arc(r,a0,a1){const[x0,y0]=pol(r,a0),[x1,y1]=pol(r,a1);
+  const large=((a1-a0+360)%360)>180?1:0;return`M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;}
+
+function drawGauge(){
+  gauge.innerHTML='';
+  gauge.appendChild(el('circle',{cx:CX,cy:CY,r:R,fill:'none',stroke:'#141a22','stroke-width':26}));
+  gauge.appendChild(el('circle',{cx:CX,cy:CY,r:R-16,fill:'none',stroke:'#10151c','stroke-width':1}));
+
+  const card=el('g',{transform:`rotate(${-S.cog} ${CX} ${CY})`}); // COG en haut
+  for(let d=0;d<360;d+=5){
+    const major=d%30===0,med=d%10===0;
+    const[x0,y0]=pol(R+9,d),[x1,y1]=pol(R+9-(major?15:med?9:5),d);
+    card.appendChild(el('line',{x1:x0,y1:y0,x2:x1,y2:y1,stroke:major?'#aeb7c2':'#3b444f',
+      'stroke-width':major?2.4:1.4,'stroke-linecap':'round',opacity:major?1:med?.85:.5}));
+  }
+  const cardinals={0:'N',90:'E',180:'S',270:'W'},nums={30:'30',60:'60',120:'120',150:'150',210:'210',240:'240',300:'300',330:'330'};
+  for(const d in cardinals){const[lx,ly]=pol(R-40,+d);
+    const t=el('text',{x:lx,y:ly,fill:'#f4f7fa','font-size':29,'font-weight':600,'text-anchor':'middle','dominant-baseline':'central',transform:`rotate(${d} ${lx} ${ly})`});
+    t.textContent=cardinals[d];card.appendChild(t);}
+  for(const d in nums){const[lx,ly]=pol(R-36,+d);
+    const t=el('text',{x:lx,y:ly,fill:'#7a828d','font-size':16,'font-weight':500,'text-anchor':'middle','dominant-baseline':'central',transform:`rotate(${d} ${lx} ${ly})`});
+    t.textContent=nums[d];card.appendChild(t);}
+  gauge.appendChild(card);
+
+  gauge.appendChild(el('path',{d:arc(R,-58,-9),fill:'none',stroke:'var(--red)','stroke-width':4,'stroke-linecap':'round',opacity:.9}));
+  gauge.appendChild(el('path',{d:arc(R,9,58),fill:'none',stroke:'var(--green)','stroke-width':4,'stroke-linecap':'round',opacity:.9}));
+
+  function windBug(label,bearing,fill,txt,r){
+    const ang=((bearing-S.cog+540)%360)-180;
+    const g=el('g',{transform:`rotate(${ang} ${CX} ${CY})`});const[bx,by]=pol(R-16,0);
+    g.appendChild(el('circle',{cx:bx,cy:by,r:r,fill:fill}));
+    const t=el('text',{x:bx,y:by+1,fill:txt,'font-size':16,'font-weight':800,'text-anchor':'middle','dominant-baseline':'central'});
+    t.textContent=label;g.appendChild(t);gauge.appendChild(g);
+  }
+  windBug('T',S.hdg+S.twa,'var(--steel)','#08111c',13);
+  windBug('A',S.hdg+S.awa,'var(--amber)','#1a1200',14);
+
+  const[,ty]=pol(R+9,0);
+  gauge.appendChild(el('path',{d:`M ${CX-11} ${ty-2} L ${CX+11} ${ty-2} L ${CX} ${ty+18} Z`,fill:'var(--cyan)'}));
+
+  let bigNum,modeTxt;
+  // Consigne d'angle au vent = la VRAIE consigne du pilote, décodée par SignalK (PGN 65341,
+  // path steering.autopilot.target.windAngleApparent, en rad signés : ≥0 = STBD TACK, <0 = PORT TACK).
+  const wtr=S.windTargetRad;
+  // Amure : en mode Vent -> signe de la consigne ; sinon -> vent apparent courant.
+  const tack=(S.engaged&&S.mode==='Wind'&&wtr!=null)
+    ?(wtr>=0?'STBD TACK':'PORT TACK')
+    :(S.awa>=0?'STBD TACK':'PORT TACK');
+  if(!S.engaged){modeTxt='STANDBY';bigNum=Math.round(S.hdg);}
+  else if(S.mode==='Wind'){modeTxt='WIND';bigNum=wtr!=null?Math.round(Math.abs(wtr)*D2):Math.round(Math.abs(S.awa));}
+  else{modeTxt=(S.mode||'AUTO').toUpperCase();bigNum=Math.round(S.target!=null?n360(S.target-(S.varDeg||0)):S.hdg);} // Auto: consigne magnétique
+  const m=el('text',{x:CX,y:CY-54,fill:'var(--muted-2)','font-size':15,'font-weight':700,'text-anchor':'middle','letter-spacing':'2.5'});
+  m.textContent=modeTxt;gauge.appendChild(m);
+  const tg=el('text',{x:CX,y:CY+20,fill:'#fff','font-size':90,'font-weight':600,'text-anchor':'middle','font-variant-numeric':'tabular-nums','letter-spacing':'-1'});
+  tg.textContent=bigNum;
+  const dg=el('tspan',{'font-size':32,'dy':'-36','fill':'var(--muted-2)','font-weight':500});
+  dg.textContent='°';tg.appendChild(dg);gauge.appendChild(tg);
+  const side=el('text',{x:CX,y:CY+56,fill:'var(--muted-2)','font-size':15,'font-weight':700,'text-anchor':'middle','letter-spacing':'1.5'});
+  side.textContent=tack;gauge.appendChild(side);
+}
+
+function renderRudder(){
+  const max=40,a=Math.max(-max,Math.min(max,S.rudder)),f=document.getElementById('rudFill');
+  const pct=Math.abs(a)/max*50;
+  if(a>=0){f.style.left='50%';f.style.right='auto';f.style.width=pct+'%';f.style.background='var(--green)';}
+  else{f.style.right='50%';f.style.left='auto';f.style.width=pct+'%';f.style.background='var(--red)';}
+  const rv=Math.round(S.rudder);
+  document.getElementById('rudVal').textContent=Math.abs(rv)+'°'+(rv===0?'':' '+(rv>0?'S':'P'));
+}
+
+function render(){
+  S.cog=n360((S.cogTrue||0)-(S.varDeg||0)); // COG magnétique (comme le B&G)
+  document.getElementById('hdg').textContent=Math.round(S.hdg);
+  document.getElementById('awa').textContent=Math.round(Math.abs(S.awa));
+  document.getElementById('modeName').textContent=S.engaged?S.mode:'Standby';
+  document.getElementById('offLabel').textContent=S.engaged?'Standby':'Engage';
+  document.getElementById('offBtn').classList.toggle('eng',!S.engaged);
+  document.getElementById('sog').textContent=S.sog.toFixed(1);
+  document.getElementById('cog').textContent=Math.round(S.cog);
+  document.getElementById('tws').textContent=Math.round(S.tws);
+  document.getElementById('aws').textContent=Math.round(S.aws);
+  document.getElementById('twa').textContent=Math.round(Math.abs(S.twa));
+  document.querySelector('.cmds').classList.toggle('nfu',!S.engaged);
+  renderRudder();drawGauge();drawTwd();
+}
+
+// ── toast feedback (remplace la ligne de statut) ──
+const toast=document.getElementById('toast');let toastT;
+function flash(msg,err){toast.textContent=msg;toast.classList.toggle('err',!!err);toast.classList.add('show');
+  clearTimeout(toastT);toastT=setTimeout(()=>toast.classList.remove('show'),1800);}
+
+// ── envoi générique d'une commande vers l'API du plugin ──
+async function postCmd(path,body,okMsg){
+  if(!S.live){flash('Demo · '+okMsg);return;}
+  try{const r=await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();if(!r.ok){flash(j.error||('HTTP '+r.status),true);return;}
+    flash(okMsg);setTimeout(refreshStatus,600);
+  }catch(e){flash(e.message,true);}
+}
+const sendCourse=(dir,deg)=>postCmd('/course',{dir,deg},(dir==='bear'?'+':'−')+deg+'°');
+const sendMode=m=>postCmd('/mode',{mode:m},m==='standby'?'Standby':(m==='wind'?'Wind mode':'Auto'));
+// clic cap : uniquement pilote engagé (en standby ces boutons servent au NFU)
+document.querySelectorAll('.cmd[data-dir]').forEach(b=>b.addEventListener('click',()=>{if(S.engaged)sendCourse(b.dataset.dir,+b.dataset.deg);}));
+document.getElementById('modeBtn').addEventListener('click',()=>sendMode(S.mode==='Wind'?'auto':'wind'));
+document.getElementById('offBtn').addEventListener('click',()=>sendMode(S.engaged?'standby':'auto'));
+
+// ── barre directe NFU (standby) : appui-maintenu sur les ±10 ──
+async function rudderCmd(dir){ if(!S.live)return; try{await fetch(API+'/rudder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dir})});}catch(e){} }
+let nfuInterval=null,nfuSafety=null,nfuBtn=null;
+function startNfu(side,btn){
+  if(nfuBtn)return; nfuBtn=btn; btn.classList.add('nfu-active');
+  flash('Helm '+(side==='stbd'?'stbd':'port'));
+  rudderCmd(side);
+  nfuInterval=setInterval(()=>rudderCmd(side),300);       // keepalive tant que maintenu
+  nfuSafety=setTimeout(()=>{flash('Helm auto-stop',true);stopNfu();},8000); // sûreté anti-emballement
+}
+function stopNfu(){
+  if(!nfuBtn)return; clearInterval(nfuInterval);clearTimeout(nfuSafety);
+  nfuBtn.classList.remove('nfu-active');nfuBtn=null;
+  rudderCmd('stop');setTimeout(()=>rudderCmd('stop'),120); // stop x2 fiabilité
+}
+document.querySelectorAll('.cmd[data-rudder]').forEach(b=>{
+  const side=b.dataset.rudder;
+  b.addEventListener('pointerdown',e=>{if(S.engaged)return;e.preventDefault();startNfu(side,b);});
+  b.addEventListener('pointerup',stopNfu);
+  b.addEventListener('pointerleave',stopNfu);
+  b.addEventListener('pointercancel',stopNfu);
+});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopNfu();});
+window.addEventListener('pagehide',stopNfu);
+
+// ── Tack : appui long 2 s (anti-erreur) ──
+const HOLD_MS=2000;
+document.querySelectorAll('.cmd[data-tack]').forEach(b=>{
+  const fill=b.querySelector('.hold-fill');let t0=0,raf=0,done=false;
+  const step=()=>{const p=Math.min(1,(performance.now()-t0)/HOLD_MS);fill.style.width=(p*100)+'%';
+    if(p>=1&&!done){done=true;fill.style.width='0';doTack(b.dataset.tack);}else if(!done)raf=requestAnimationFrame(step);};
+  const start=e=>{e.preventDefault();done=false;t0=performance.now();cancelAnimationFrame(raf);raf=requestAnimationFrame(step);};
+  const cancel=()=>{cancelAnimationFrame(raf);if(!done)fill.style.width='0';};
+  b.addEventListener('pointerdown',start);b.addEventListener('pointerup',cancel);
+  b.addEventListener('pointerleave',cancel);b.addEventListener('pointercancel',cancel);
+});
+function doTack(side){ postCmd('/tack',{dir:side},'Tack '+(side==='stbd'?'stbd':'port')); }
+
+// ── données live (cœur SignalK) ──
+const D2=180/Math.PI,KN=1.94384;
+const n360=d=>((d%360)+360)%360, n180=d=>{d=n360(d);return d>180?d-360:d;};
+const PATHS={
+  'navigation.headingMagnetic':v=>S.hdg=n360(v*D2),
+  'navigation.magneticVariation':v=>S.varDeg=v*D2,
+  'navigation.courseOverGroundTrue':v=>S.cogTrue=n360(v*D2),
+  'navigation.speedOverGround':v=>S.sog=v*KN,
+  'environment.wind.angleApparent':v=>S.awa=n180(v*D2),
+  'environment.wind.speedApparent':v=>S.aws=v*KN,
+  'environment.wind.angleTrueWater':v=>S.twa=n180(v*D2),
+  'environment.wind.speedTrue':v=>S.tws=v*KN,
+  'steering.rudderAngle':v=>S.rudder=v*D2,
+  'steering.autopilot.target.windAngleApparent':v=>S.windTargetRad=v, // consigne vent réelle du pilote (PGN 65341)
+  // TWD : vent vrai converti en magnétique (− variation), comme le B&G. Source = celle du pilote détecté
+  // (S.twdPref, fournie par /status) avec repli sur n'importe quelle source si elle est absente/muette.
+  'environment.wind.directionTrue':(v,src)=>onTwdDir(n360(v*D2-(S.varDeg||0)),src)
+};
+// ── TWD : historique glissant 1 h + mini-graphe ──
+const TWD_WIN=3600000, TWD_STEP=6000; // fenêtre 1 h, 1 pt/6 s
+function onTwdDir(mag,src){
+  const pref=S.twdPref,now=performance.now();
+  if(!pref){setTwd(mag);return;}                       // pas de source préférée → toute source
+  if(src===pref){S._twdPrefSeen=now;setTwd(mag);}      // source préférée (le pilote) → prioritaire
+  else if(now-(S._twdPrefSeen||0)>8000)setTwd(mag);    // préférée absente/muette >8 s → repli
+}
+function setTwd(deg){
+  if(!S._twdReal){S._twdReal=true;S.twdHist=[];} // 1ère vraie donnée : on jette l'historique de démo
+  S.twd=deg;
+  const t=Date.now(),h=S.twdHist;
+  const u=h.length?deg+360*Math.round((h[h.length-1].u-deg)/360):deg; // « déroulé » pour éviter le saut 359→0
+  if(!h.length||t-h[h.length-1].t>=TWD_STEP)h.push({t,u});
+  else h[h.length-1].u=u; // rafraîchit le dernier point tant qu'on n'a pas franchi le pas
+  const cut=t-TWD_WIN;while(h.length&&h[0].t<cut)h.shift();
+}
+function drawTwd(){
+  const svg=document.getElementById('twdSpark');if(!svg)return;
+  const r=svg.getBoundingClientRect(),W=Math.max(140,r.width|0),H=Math.max(70,r.height|0);
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  const h=S.twdHist,now=Date.now();
+  const mL=8,mR=34,mT=15,mB=15,cw=W-mL-mR,ch=H-mT-mB; // marges : haut=titre, droite=°, bas=temps
+  const X=t=>mL+((now-t)/TWD_WIN)*cw;                  // 0 (maintenant) à gauche → 1 h à droite
+  const p=[];
+  // titre + valeur courante
+  p.push('<text x="'+mL+'" y="11" fill="var(--muted)" font-size="10" font-weight="700" letter-spacing="1">TWD</text>');
+  p.push('<text x="'+(mL+34)+'" y="11.5" fill="var(--yellow)" font-size="13" font-weight="800">'+Math.round(n360(S.twd))+'°</text>');
+  // repères temps (verticaux) : 0 / 15m / 30m / 45m / 1h
+  const tl=['0','15m','30m','45m','1h'];
+  for(let k=0;k<5;k++){const x=mL+(k/4)*cw;
+    p.push('<line x1="'+x.toFixed(1)+'" y1="'+mT+'" x2="'+x.toFixed(1)+'" y2="'+(mT+ch)+'" stroke="var(--line)" stroke-width="1" opacity="0.7"'+(k===0?'':' stroke-dasharray="2 3"')+'/>');
+    p.push('<text x="'+x.toFixed(1)+'" y="'+(H-4)+'" fill="var(--muted)" font-size="9" text-anchor="'+(k===0?'start':k===4?'end':'middle')+'">'+tl[k]+'</text>');
+  }
+  if(h.length>=2){
+    const us=h.map(q=>q.u).sort((a,b)=>a-b),center=Math.round(us[us.length>>1]);
+    let dev=0;for(const q of h)dev=Math.max(dev,Math.abs(q.u-center));
+    const step=dev<=25?10:dev<=50?20:dev<=90?30:50,K=Math.max(1,Math.ceil(dev/step));
+    const half=K*step+step*0.3;                        // demi-plage verticale + marge
+    const Y=u=>mT+(0.5-(u-center)/(2*half))*ch;
+    // repères d'amplitude (horizontaux) : centre = TWD absolu, autres = ±step
+    for(let k=-K;k<=K;k++){const y=Y(center+k*step);
+      p.push('<line x1="'+mL+'" y1="'+y.toFixed(1)+'" x2="'+(mL+cw)+'" y2="'+y.toFixed(1)+'" stroke="var(--line)" stroke-width="1" opacity="'+(k===0?0.9:0.4)+'"'+(k===0?'':' stroke-dasharray="2 3"')+'/>');
+      p.push('<text x="'+(mL+cw+4)+'" y="'+(y+3).toFixed(1)+'" fill="'+(k===0?'var(--muted-2)':'var(--muted)')+'" font-size="9" font-weight="'+(k===0?700:600)+'">'+(k===0?n360(center)+'°':(k>0?'+':'')+k*step)+'</text>');
+    }
+    let pts='';for(const q of h)pts+=X(q.t).toFixed(1)+','+Y(q.u).toFixed(1)+' ';
+    p.push('<polyline points="'+pts.trim()+'" fill="none" stroke="var(--yellow)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>');
+    const last=h[h.length-1];
+    p.push('<circle cx="'+X(last.t).toFixed(1)+'" cy="'+Y(last.u).toFixed(1)+'" r="2.3" fill="var(--yellow)"/>');
+  }
+  svg.innerHTML=p.join('');
+}
+// Historique de démo (remplacé dès la 1ère vraie donnée) pour que la bande ne soit pas vide hors-ligne.
+(function(){const t=Date.now();for(let i=60;i>=0;i--)S.twdHist.push({t:t-i*58000,u:333+7*Math.sin(i/9)+3*Math.sin(i/3)});})();
+let renderPending=false;
+function scheduleRender(){if(renderPending)return;renderPending=true;requestAnimationFrame(()=>{renderPending=false;render();});}
+function connectSK(){
+  let ws;try{ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/signalk/v1/stream?subscribe=none');}catch(e){return;}
+  ws.onopen=()=>ws.send(JSON.stringify({context:'vessels.self',subscribe:Object.keys(PATHS).map(p=>({path:p,period:200,policy:'instant',minPeriod:200}))}));
+  ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(!m.updates)return;let changed=false;
+    for(const u of m.updates)for(const kv of (u.values||[])){const fn=PATHS[kv.path];if(fn&&typeof kv.value==='number'){fn(kv.value,u.$source);changed=true;}}
+    if(changed)scheduleRender();};
+  ws.onclose=()=>setTimeout(connectSK,3000);ws.onerror=()=>{try{ws.close();}catch(e){}};
+}
+
+async function refreshStatus(){
+  try{const r=await fetch(API+'/status');if(!r.ok)throw 0;const j=await r.json();
+    S.live=true;if(j.mode)S.mode=j.mode;if(j.engaged!=null)S.engaged=j.engaged;
+    S.target=(typeof j.target==='number')?j.target:null;
+    S.twdPref=j.twdSource||null; // source préférée pour le TWD (pilote détecté), sinon repli toute source
+    render();
+  }catch(e){/* standalone/démo : on garde les valeurs par défaut */}
+}
+
+// anti double-tap / pinch zoom (iOS)
+document.addEventListener('gesturestart',e=>e.preventDefault());
+document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
+
+render();refreshStatus();connectSK();
+window.addEventListener('resize',()=>{drawGauge();drawTwd();});
+setInterval(refreshStatus,4000);
+</script>
+</body>
+</html>
