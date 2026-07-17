@@ -290,7 +290,13 @@ document.querySelectorAll('.cmd[data-rudder]').forEach(b=>{
   b.addEventListener('pointerleave',stopNfu);
   b.addEventListener('pointercancel',stopNfu);
 });
-document.addEventListener('visibilitychange',()=>{if(document.hidden)stopNfu();});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){stopNfu();return;}
+  // Retour d'écran verrouillé : iOS gèle la page, le WS n'a rien reçu → trou dans l'historique local
+  // (le graphe reliait les 2 bords par une droite). Le plugin, lui, a continué d'échantillonner :
+  // on resynchronise depuis le serveur au réveil.
+  loadTwdHistory();refreshStatus();
+});
 window.addEventListener('pagehide',stopNfu);
 
 // ── Tack : appui long 2 s (anti-erreur) ──
@@ -381,9 +387,14 @@ function drawTwd(){
 (function(){const t=Date.now();for(let i=60;i>=0;i--)S.twdHist.push({t:t-i*58000,u:333+7*Math.sin(i/9)+3*Math.sin(i/3)});})();
 let renderPending=false;
 function scheduleRender(){if(renderPending)return;renderPending=true;requestAnimationFrame(()=>{renderPending=false;render();});}
+let wsOpened=false;
 function connectSK(){
   let ws;try{ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/signalk/v1/stream?subscribe=none');}catch(e){return;}
-  ws.onopen=()=>ws.send(JSON.stringify({context:'vessels.self',subscribe:Object.keys(PATHS).map(p=>({path:p,period:200,policy:'instant',minPeriod:200}))}));
+  ws.onopen=()=>{
+    ws.send(JSON.stringify({context:'vessels.self',subscribe:Object.keys(PATHS).map(p=>({path:p,period:200,policy:'instant',minPeriod:200}))}));
+    if(wsOpened)loadTwdHistory(); // reconnexion (wifi perdu…) : on a pu manquer des points → resync
+    wsOpened=true;
+  };
   ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch(e){return;}if(!m.updates)return;let changed=false;
     for(const u of m.updates)for(const kv of (u.values||[])){const fn=PATHS[kv.path];if(fn&&typeof kv.value==='number'){fn(kv.value,u.$source);changed=true;}}
     if(changed)scheduleRender();};
