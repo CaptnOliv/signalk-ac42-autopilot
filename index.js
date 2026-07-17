@@ -70,6 +70,51 @@ module.exports = function (app) {
     return (a == null) ? 0x02 : a
   }
 
+  // --- Historique TWD (direction du vent vrai, magnétique) échantillonné côté serveur ---
+  // Permet à la web app d'afficher l'heure écoulée dès l'ouverture, au lieu de la reconstruire.
+  // En mémoire uniquement : repart à zéro au redémarrage du plugin.
+  const TWD_WIN_MS = 3600000 // fenêtre glissante 1 h
+  const TWD_STEP_MS = 6000   // 1 point / 6 s → ~600 points max
+  let twdHist = []           // [[timestampMs, degDéroulés], …]
+  let twdTimer = null
+
+  const n360d = (d) => ((d % 360) + 360) % 360
+
+  // Source SignalK à utiliser pour le TWD : forcée en config, sinon celle du pilote détecté.
+  function resolveTwdSource () {
+    const cfg = ((plugin._options && plugin._options.windDirectionSource) || '').trim()
+    if (cfg) return cfg
+    return detector ? detector.apSource() : null
+  }
+
+  // Lit une feuille du modèle SignalK de façon tolérante (nombre brut, {value}, ou values[$source]).
+  function leafValue (leaf, src) {
+    if (leaf == null) return null
+    if (typeof leaf === 'number') return leaf
+    if (src && leaf.values && leaf.values[src] && typeof leaf.values[src].value === 'number') {
+      return leaf.values[src].value
+    }
+    if (typeof leaf.value === 'number') return leaf.value
+    return null
+  }
+
+  function sampleTwd () {
+    try {
+      const src = resolveTwdSource()
+      const rad = leafValue(app.getSelfPath('environment.wind.directionTrue'), src)
+      if (rad == null) return
+      const varRad = leafValue(app.getSelfPath('navigation.magneticVariation'), null) || 0
+      const deg = n360d((rad - varRad) * 180 / Math.PI) // magnétique, comme le B&G
+      const t = Date.now()
+      // « déroulage » : garde la courbe continue au passage 359°→0°
+      const last = twdHist.length ? twdHist[twdHist.length - 1][1] : null
+      const u = (last == null) ? deg : deg + 360 * Math.round((last - deg) / 360)
+      twdHist.push([t, u])
+      const cut = t - TWD_WIN_MS
+      while (twdHist.length && twdHist[0][0] < cut) twdHist.shift()
+    } catch (e) { app.debug(`twd sample error: ${e.message}`) }
+  }
+
   plugin.start = function (options) {
     iface = options.canInterface || 'can0'
     detector = new ControllerDetector({
@@ -80,12 +125,16 @@ module.exports = function (app) {
     })
     detector.start()
     plugin._options = options
+    twdHist = []
+    twdTimer = setInterval(sampleTwd, TWD_STEP_MS)
     app.setPluginStatus('Started — detecting AC42 controller…')
     app.debug('AC42 plugin started')
   }
 
   plugin.stop = function () {
     if (detector) { detector.stop(); detector = null }
+    if (twdTimer) { clearInterval(twdTimer); twdTimer = null }
+    twdHist = []
     app.setPluginStatus('Stopped')
   }
 
@@ -106,6 +155,12 @@ module.exports = function (app) {
         twdSource: (plugin._options.windDirectionSource || '').trim() || (detector ? detector.apSource() : null),
         forced: (plugin._options.fixedControllerAddress || '').trim() || null
       })
+    })
+
+    // Historique TWD (jusqu'à 1 h) pour amorcer le graphe dès l'ouverture de la web app.
+    // points = [[timestampMs, degMagnétiquesDéroulés], …]
+    router.get('/twd-history', (req, res) => {
+      res.json({ windowMs: TWD_WIN_MS, stepMs: TWD_STEP_MS, points: twdHist })
     })
 
     // Changement de cap : POST /course  { dir: "bear"|"luff", deg: 1|10 }

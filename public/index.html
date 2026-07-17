@@ -149,7 +149,7 @@
 <script>
 'use strict'
 const API='/plugins/signalk-ac42-autopilot';
-const S={hdg:319,awa:-32,target:null,windTargetRad:-0.56,mode:'Wind',engaged:true,rudder:0,
+const S={hdg:319,awa:-32,target:null,windTargetDeg:-32,mode:'Wind',engaged:true,rudder:0,
         sog:6.4,cog:322,cogTrue:322,varDeg:0,tws:12,aws:16,twa:-41,live:false,
         twd:333,twdHist:[],_twdReal:false,twdPref:null,_twdPrefSeen:0};
 
@@ -199,15 +199,19 @@ function drawGauge(){
   gauge.appendChild(el('path',{d:`M ${CX-11} ${ty-2} L ${CX+11} ${ty-2} L ${CX} ${ty+18} Z`,fill:'var(--cyan)'}));
 
   let bigNum,modeTxt;
-  // Consigne d'angle au vent = la VRAIE consigne du pilote, décodée par SignalK (PGN 65341,
-  // path steering.autopilot.target.windAngleApparent, en rad signés : ≥0 = STBD TACK, <0 = PORT TACK).
-  const wtr=S.windTargetRad;
+  // Consigne d'angle au vent = la VRAIE consigne du pilote (PGN 65341 décodé par SignalK).
+  // ⚠️ Elle arrive en 0..360° → normalisée en ±180 (S.windTargetDeg) : 325° = 35° bâbord, pas 325.
+  // Convention : >0 = STBD TACK, <0 = PORT TACK ; magnitude 1..179 de chaque bord.
+  // 0 (face au vent) et 180 (vent arrière) sont les seuls angles SANS amure.
+  const wtd=S.windTargetDeg;
+  const wmag=wtd!=null?Math.round(Math.abs(wtd)):null;
+  const inWind=S.engaged&&S.mode==='Wind'&&wtd!=null;
   // Amure : en mode Vent -> signe de la consigne ; sinon -> vent apparent courant.
-  const tack=(S.engaged&&S.mode==='Wind'&&wtr!=null)
-    ?(wtr>=0?'STBD TACK':'PORT TACK')
+  const tack=inWind
+    ?((wmag===0||wmag===180)?'':(wtd>=0?'STBD TACK':'PORT TACK'))
     :(S.awa>=0?'STBD TACK':'PORT TACK');
   if(!S.engaged){modeTxt='STANDBY';bigNum=Math.round(S.hdg);}
-  else if(S.mode==='Wind'){modeTxt='WIND';bigNum=wtr!=null?Math.round(Math.abs(wtr)*D2):Math.round(Math.abs(S.awa));}
+  else if(S.mode==='Wind'){modeTxt='WIND';bigNum=wtd!=null?wmag:Math.round(Math.abs(S.awa));}
   else{modeTxt=(S.mode||'AUTO').toUpperCase();bigNum=Math.round(S.target!=null?n360(S.target-(S.varDeg||0)):S.hdg);} // Auto: consigne magnétique
   const m=el('text',{x:CX,y:CY-54,fill:'var(--muted-2)','font-size':15,'font-weight':700,'text-anchor':'middle','letter-spacing':'2.5'});
   m.textContent=modeTxt;gauge.appendChild(m);
@@ -315,7 +319,8 @@ const PATHS={
   'environment.wind.angleTrueWater':v=>S.twa=n180(v*D2),
   'environment.wind.speedTrue':v=>S.tws=v*KN,
   'steering.rudderAngle':v=>S.rudder=v*D2,
-  'steering.autopilot.target.windAngleApparent':v=>S.windTargetRad=v, // consigne vent réelle du pilote (PGN 65341)
+  // Consigne vent réelle du pilote (PGN 65341). Arrive en 0..2π → normalisée en ±180° (325° = 35° bâbord).
+  'steering.autopilot.target.windAngleApparent':v=>S.windTargetDeg=n180(v*D2),
   // TWD : vent vrai converti en magnétique (− variation), comme le B&G. Source = celle du pilote détecté
   // (S.twdPref, fournie par /status) avec repli sur n'importe quelle source si elle est absente/muette.
   'environment.wind.directionTrue':(v,src)=>onTwdDir(n360(v*D2-(S.varDeg||0)),src)
@@ -394,11 +399,23 @@ async function refreshStatus(){
   }catch(e){/* standalone/démo : on garde les valeurs par défaut */}
 }
 
+// Amorce le graphe TWD avec l'historique tenu par le plugin : l'heure écoulée est visible
+// dès l'ouverture, sans attendre de la reconstruire côté navigateur.
+async function loadTwdHistory(){
+  try{const r=await fetch(API+'/twd-history');if(!r.ok)return;const j=await r.json();
+    if(!Array.isArray(j.points)||!j.points.length)return;
+    S.twdHist=j.points.map(p=>({t:p[0],u:p[1]}));
+    S._twdReal=true;                                   // remplace l'historique de démo
+    S.twd=n360(S.twdHist[S.twdHist.length-1].u);
+    render();
+  }catch(e){/* pas de plugin joignable : on garde l'historique local */}
+}
+
 // anti double-tap / pinch zoom (iOS)
 document.addEventListener('gesturestart',e=>e.preventDefault());
 document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
 
-render();refreshStatus();connectSK();
+render();refreshStatus();loadTwdHistory();connectSK();
 window.addEventListener('resize',()=>{drawGauge();drawTwd();});
 setInterval(refreshStatus,4000);
 </script>
