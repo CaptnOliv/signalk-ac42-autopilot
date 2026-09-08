@@ -8,10 +8,14 @@
 const ControllerDetector = require('./lib/controller')
 const cmds = require('./lib/commands')
 const { sendFrames } = require('./lib/cansend')
+const { createUsage } = require('./lib/usage')
+const path = require('path')
 
 module.exports = function (app) {
   let detector = null
   let iface = 'can0'
+  let usage = null
+  let usageTimer = null
 
   const plugin = {
     id: 'signalk-ac42-autopilot',
@@ -51,6 +55,18 @@ module.exports = function (app) {
         title: 'Controller timeout (ms)',
         description: 'How long a detected controller address stays valid without a new heartbeat.',
         default: 5000
+      },
+      usageStats: {
+        type: 'boolean',
+        title: 'Let me know this install exists',
+        description: 'Once a day this sends, and nothing else: a random ID drawn once on this install (tied to nothing \u2014 not your boat, not your hardware, not your network), the plugin version, the Node version, the SignalK version and the date that ID was drawn. No position, no boat name, no autopilot data, no IP address kept by the server. It is the only way I have of knowing whether anyone out there is running this plugin \u2014 npm download counts are mostly mirrors and scanners, and a boat that installs once and then sails for three years never appears again. The exact payload is readable at any time at /plugins/signalk-ac42-autopilot/usage.json.',
+        default: true
+      },
+      usageEndpoint: {
+        type: 'string',
+        title: 'Where that daily ping goes (advanced)',
+        description: 'Leave as is unless you run your own counter. Empty disables the ping just as surely as the switch above.',
+        default: 'https://autopolar.quicky.app/v1/ping'
       }
     }
   }
@@ -115,6 +131,30 @@ module.exports = function (app) {
     } catch (e) { app.debug(`twd sample error: ${e.message}`) }
   }
 
+  // Le corps exact du ping quotidien. Il doit rester champ pour champ celui
+  // que décrit la configuration : c'est la seule chose qui autorise à
+  // l'envoyer. Rien du pilote, rien du bateau, rien du bus n'entre ici.
+  function usagePayload () {
+    const st = usage ? usage.state() : {}
+    return {
+      schema: 1,
+      plugin: 'signalk-ac42-autopilot',
+      installId: st.installId || null,
+      version: require('./package.json').version,
+      node: process.version,
+      signalk: (app && app.config && app.config.version) || null,
+      firstSeen: st.firstSeen || null
+    }
+  }
+
+  function usageOpts () {
+    const o = plugin._options || {}
+    return {
+      usageStats: o.usageStats !== false,
+      usageEndpoint: (o.usageEndpoint || '').trim()
+    }
+  }
+
   plugin.start = function (options) {
     iface = options.canInterface || 'can0'
     detector = new ControllerDetector({
@@ -127,6 +167,13 @@ module.exports = function (app) {
     plugin._options = options
     twdHist = []
     twdTimer = setInterval(sampleTwd, TWD_STEP_MS)
+    // Un identifiant tiré une fois, un ping par jour, rien dans la première
+    // heure de fonctionnement — toute la règle est dans lib/usage.js. On ne
+    // regarde que toutes les 5 min : l'appel est un test de date, pas un envoi.
+    usage = createUsage(path.join(app.getDataDirPath(), 'usage.json'), (m) => app.debug(m))
+    usageTimer = setInterval(() => {
+      try { usage.maybeSend(usageOpts(), usagePayload) } catch (e) { app.debug(`usage: ${e.message}`) }
+    }, 300000)
     app.setPluginStatus('Started — detecting AC42 controller…')
     app.debug('AC42 plugin started')
   }
@@ -134,6 +181,8 @@ module.exports = function (app) {
   plugin.stop = function () {
     if (detector) { detector.stop(); detector = null }
     if (twdTimer) { clearInterval(twdTimer); twdTimer = null }
+    if (usageTimer) { clearInterval(usageTimer); usageTimer = null }
+    usage = null
     twdHist = []
     app.setPluginStatus('Stopped')
   }
@@ -161,6 +210,29 @@ module.exports = function (app) {
     // points = [[timestampMs, degMagnétiquesDéroulés], …]
     router.get('/twd-history', (req, res) => {
       res.json({ windowMs: TWD_WIN_MS, stepMs: TWD_STEP_MS, points: twdHist })
+    })
+
+    // Le ping quotidien, lisible plutôt que découvert dans le code : c'est la
+    // seule donnée que ce plugin envoie, et l'équipage n'y gagne rien
+    // directement. Elle doit donc être la plus lisible de toutes.
+    router.get('/usage', (req, res) => {
+      const st = usage ? usage.state() : {}
+      res.json({
+        enabled: usageOpts().usageStats,
+        endpoint: usageOpts().usageEndpoint,
+        installId: st.installId || null,
+        firstSeen: st.firstSeen || null,
+        lastSentAt: st.lastSentAt || null,
+        nextAt: usage ? usage.nextAt() : null,
+        sent: st.sent || 0,
+        failures: st.failures || 0,
+        lastError: st.lastError || null
+      })
+    })
+
+    router.get('/usage.json', (req, res) => {
+      res.type('application/json')
+      res.send(JSON.stringify(usagePayload(), null, 2))
     })
 
     // Changement de cap : POST /course  { dir: "bear"|"luff", deg: 1|10 }

@@ -63,6 +63,49 @@ All settings are optional — the plugin auto-detects everything needed on a sta
 | `windDirectionSource` | auto-detected | SignalK source for True Wind Direction shown in the app. Falls back to any available source if the preferred one is silent for >8s. |
 | `fixedControllerAddress` | auto-detected | Force a specific active-controller address instead of dynamic detection. |
 | `staleMs` | — | Timeout before considering a source "stale" for fallback purposes. |
+| `usageStats` | `true` | The daily "this install exists" ping described below. Off means nothing counts your installation anywhere. |
+| `usageEndpoint` | `https://autopolar.quicky.app/v1/ping` | Where that ping goes. Empty disables it just as surely as the switch above. |
+
+## Letting me know this install exists
+
+There is no honest way to find out whether anyone is running a SignalK plugin.
+npm download counts are mostly mirrors and security scanners, and a boat that
+installs once and then sails for three years without updating never appears
+again. This plugin has no other channel — it publishes nothing, it phones
+nothing home, and it has no shared pool the way a polar plugin does.
+
+So, once a day, it says that it exists. It sends this and nothing else:
+
+| field | why |
+|---|---|
+| a random ID | drawn once on this install, tied to nothing — not your boat, not your hardware, not your network. Without it the count would rest on IP addresses, which over CGNAT satellite links means nothing at all |
+| plugin version | so I know which versions are actually out there before breaking anything |
+| Node and SignalK versions | same reason |
+| the date the ID was drawn | to tell a new install from an old one |
+
+**Nothing of your boat, your pilot or your bus leaves the machine.** No
+position, no heading, no rudder angle, no wind, no NMEA 2000 address, no
+autopilot mode. No IP address is kept by the server either. The exact payload
+is readable at any time at `/plugins/signalk-ac42-autopilot/usage.json`, and
+linked from the web app itself as *What this app sends*.
+
+Nothing goes out in the first hour of running: an install that gets tried for
+five minutes and removed is not an install, and a `npm test` is not one either.
+A failed ping is simply lost — there is no retry queue, deliberately. A
+statistic has no business being handled more carefully than the things that
+actually steer the boat.
+
+Switch it off with **Let me know this install exists** in the plugin
+configuration, or empty `usageEndpoint`. The plugin then works exactly as
+before.
+
+I would rather ask for this in plain sight and have some of you say no, than
+hide it behind a "connectivity check" and have you find it in the source. It is
+readable JavaScript on a server you own; you would find it.
+
+The endpoint is shared with my other plugin for now, which is why the default
+URL says `autopolar` — the counter separates them by plugin name. It will move
+to its own name later.
 
 ## Security / Disclaimer
 

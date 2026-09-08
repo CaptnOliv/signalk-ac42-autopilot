@@ -3,7 +3,7 @@
   "description": "Control a Simrad AC42 autopilot over NMEA 2000 from SignalK, with a clean mobile web app (heading & wind steering, live compass, rudder and wind data).",
   "main": "index.js",
   "scripts": {
-    "test": "node test/frames.test.js"
+    "test": "node test/frames.test.js && node test/usage.test.js"
   },
   "keywords": [
     "signalk-node-server-plugin",
@@ -36,10 +36,11 @@
   "files": [
     "index.js",
     "lib",
+    "test",
     "public",
     "README.md",
     "LICENSE"
   ],
-  "version": "1.1.1"
+  "version": "1.2.0"
 
 }
