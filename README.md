@@ -86,8 +86,7 @@ So, once a day, it says that it exists. It sends this and nothing else:
 **Nothing of your boat, your pilot or your bus leaves the machine.** No
 position, no heading, no rudder angle, no wind, no NMEA 2000 address, no
 autopilot mode. No IP address is kept by the server either. The exact payload
-is readable at any time at `/plugins/signalk-ac42-autopilot/usage.json`, and
-linked from the web app itself as *What this app sends*.
+is readable at any time at `/plugins/signalk-ac42-autopilot/usage.json`.
 
 Nothing goes out in the first hour of running: an install that gets tried for
 five minutes and removed is not an install, and a `npm test` is not one either.
