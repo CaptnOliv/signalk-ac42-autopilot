@@ -68,6 +68,14 @@ check('mode wind', cmds.mode(SA, 'wind', 0x02),
 check('mode standby', cmds.mode(SA, 'standby', 0x02),
   { head: '0C419F02FFFF0A', payload: '060000000000' })
 
+// --- Jeu de paramètres de barre : Bas forcé=08, Haut forcé=07, automatique=46 ---
+check('response low', cmds.response(SA, 'low', 0x02),
+  { head: '0C419F02FFFF0A', payload: '0800FFFFFFFF' })
+check('response high', cmds.response(SA, 'high', 0x02),
+  { head: '0C419F02FFFF0A', payload: '0700FFFFFFFF' })
+check('response auto', cmds.response(SA, 'auto', 0x02),
+  { head: '0C419F02FFFF0A', payload: '4600FFFFFFFF' })
+
 // --- Tack : stbd=03, port=02 ---
 check('tack stbd', cmds.tack(SA, 'stbd', 0x02),
   { head: '0C419F02FFFF0A', payload: '110003FFFFFF' })
@@ -81,5 +89,32 @@ check('rudder port (NFU)', cmds.rudder(SA, 'port', 0x02),
   { head: '0C419F02FFFF02', payload: '0D0004000000' })
 check('rudder stop (NFU)', cmds.rudder(SA, 'stop', 0x02),
   { head: '0C419F02FFFF02', payload: '0D00FF000000' })
+
+// --- Lecture d'un réglage (PGN 130845) : 3 trames, identiques à celles d'un Zeus3S ---
+cmds._resetSeq()
+assert.deepStrictEqual(cmds.keyQuery('06', cmds.KEY.responseLow, 0x02), [
+  '0DFF1D06#200E419F02FFFFFF',
+  '0DFF1D06#2119110000FFFFFF',
+  '0DFF1D06#22FFFFFFFFFFFFFF'
+], 'keyQuery responseLow')
+n++
+console.log('  ok  keyQuery responseLow')
+
+// --- Décodage des niveaux de réponse reçus (écriture d'un MFD, réponse de l'AC42) ---
+{
+  const ControllerDetector = require('../lib/controller')
+  const d = new ControllerDetector({})
+  d._onKvData(Buffer.from('(1.0) can0 0DFF1D06#000E419F02FFFFFF\n(1.0) can0 0DFF1D06#0119110001'))
+  d._onKvData(Buffer.from('02FFFFFF\n(1.0) can0 0DFF1D06#02FFFFFFFFFFFFFF\n'))
+  assert.strictEqual(d.levels.low, 2, 'écriture MFD : niveau Bas = 2')
+  d._onKvData(Buffer.from('(1.0) can0 09FF1D02#400E419F02FFFFFF\n(1.0) can0 09FF1D02#411A11000201FFFF\n(1.0) can0 09FF1D02#42FFFFFFFFFFFFFF\n'))
+  assert.strictEqual(d.levels.high, 1, 'réponse AC42 : niveau Haut = 1')
+  d._onKvData(Buffer.from('(1.0) can0 0DFF1D06#600E419F02FFFFFF\n(1.0) can0 0DFF1D06#611C110000FFFFFF\n(1.0) can0 0DFF1D06#62FFFFFFFFFFFFFF\n'))
+  assert.strictEqual(d.levels.wind, null, 'une requête ne porte pas de valeur')
+  d._onKvData(Buffer.from('(1.0) can0 09FF1D02#800E419F02FFFFFF\n(1.0) can0 09FF1D02#811A0D00027300FF\n(1.0) can0 09FF1D02#82FFFFFFFFFFFFFF\n'))
+  assert.deepStrictEqual(d.levels, { low: 2, high: 1, wind: null }, 'autre clé ignorée')
+  n++
+  console.log('  ok  response levels decoding')
+}
 
 console.log(`\nAll ${n} frame tests passed.`)

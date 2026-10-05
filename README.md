@@ -13,6 +13,9 @@ Built for real sailing conditions: big buttons, wet fingers, glanceable at a dis
 - Course corrections **±1° / ±10°**
 - **Tack**, with a long-press confirmation to avoid accidental triggers
 - **NFU** (non-follow-up / direct helm) in Standby
+- **Steering parameter set** (High / Low): shows which one is active and whether it is switched
+  automatically by the transition speed or forced, and lets you change it
+- **Response level** (1–10) currently applied by the pilot, read from the AC42
 - Animated wind rose
 - 1-hour **TWD history** strip
 - SOG / COG / TWS / AWS / TWA instrument tiles

@@ -86,6 +86,26 @@ module.exports = function (app) {
     return (a == null) ? 0x02 : a
   }
 
+  // Niveaux de réponse : l'AC42 ne les diffuse pas, il faut les lui demander (PGN 130845, lecture
+  // seule, comme un MFD qui ouvre la page de réglages). On ne le fait que lorsqu'une web app
+  // interroge /status et qu'une valeur manque ou date de plus d'une minute ; les changements faits
+  // sur un MFD sont, eux, captés au passage par le détecteur sans rien émettre.
+  const LEVELS_MAX_AGE_MS = 60000
+  const LEVELS_RETRY_MS = 15000
+  let levelsAskedAt = 0
+  async function refreshLevels () {
+    if (!detector || detector.apAddress() == null || !detector.levelsStale(LEVELS_MAX_AGE_MS)) return
+    if (Date.now() - levelsAskedAt < LEVELS_RETRY_MS) return
+    const src = resolveSrc(plugin._options)
+    if (!src) return
+    levelsAskedAt = Date.now()
+    try {
+      for (const key of [cmds.KEY.responseLow, cmds.KEY.responseHigh, cmds.KEY.responseWind]) {
+        await sendFrames(iface, cmds.keyQuery(src, key, apTarget()))
+      }
+    } catch (e) { app.debug(`levels query: ${e.message}`) }
+  }
+
   // --- Historique TWD (direction du vent vrai, magnétique) échantillonné côté serveur ---
   // Permet à la web app d'afficher l'heure écoulée dès l'ouverture, au lieu de la reconstruire.
   // En mémoire uniquement : repart à zéro au redémarrage du plugin.
@@ -191,6 +211,7 @@ module.exports = function (app) {
   plugin.registerWithRouter = function (router) {
     // État courant : mode/adresse contrôleur, pour la web app.
     router.get('/status', (req, res) => {
+      refreshLevels()
       res.json({
         iface,
         activeController: detector ? detector.active() : null,
@@ -198,6 +219,9 @@ module.exports = function (app) {
         mode: detector ? detector.currentMode() : null,
         engaged: detector ? detector.engaged() : null,
         target: detector ? detector.currentTarget() : null,
+        // Jeu de paramètres de barre actif : { set: 'high'|'low', auto: bool, level: 1..10|null,
+        // levels: { low, high, wind } } ou null (Standby, ou pas encore vu).
+        response: detector ? detector.response() : null,
         apAddress: detector ? detector.apAddress() : null,
         apSource: detector ? detector.apSource() : null,
         // Source à utiliser pour le graphe TWD : forcée en config, sinon celle du pilote détecté (sinon: aucune → toute source).
@@ -264,6 +288,19 @@ module.exports = function (app) {
         await sendFrames(iface, frames)
         app.debug(`mode ${mode} via src ${src}`)
         res.json({ ok: true, src, mode })
+      } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    // Jeu de paramètres de barre : POST /response { set: "auto"|"low"|"high" }
+    router.post('/response', async (req, res) => {
+      const { set } = req.body || {}
+      if (!['auto', 'low', 'high'].includes(set)) return res.status(400).json({ error: 'set must be auto|low|high' })
+      const src = resolveSrc(plugin._options)
+      if (!src) return res.status(409).json({ error: 'No active AC42 controller detected on the bus' })
+      try {
+        await sendFrames(iface, cmds.response(src, set, apTarget()))
+        app.debug(`response ${set} via src ${src}`)
+        res.json({ ok: true, src, set })
       } catch (e) { res.status(500).json({ error: e.message }) }
     })
 
