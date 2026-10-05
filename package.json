@@ -27,12 +27,12 @@
   
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/captnoliv/signalk-ac42-autopilot.git"
+    "url": "git+https://github.com/CaptnOliv/signalk-ac42-autopilot.git"
   },
   "bugs": {
-    "url": "https://github.com/captnoliv/signalk-ac42-autopilot/issues"
+    "url": "https://github.com/CaptnOliv/signalk-ac42-autopilot/issues"
   },
-  "homepage": "https://github.com/captnoliv/signalk-ac42-autopilot#readme",
+  "homepage": "https://github.com/CaptnOliv/signalk-ac42-autopilot#readme",
   "files": [
     "index.js",
     "lib",
